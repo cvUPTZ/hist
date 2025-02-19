@@ -16,14 +16,17 @@ async function retryWithExponentialBackoff<T>(
       return await operation();
     } catch (error) {
       lastError = error;
-      
-      if (error?.message?.includes("503") || error?.message?.includes("overloaded")) {
+
+      if (
+        error?.message?.includes("503") ||
+        error?.message?.includes("overloaded")
+      ) {
         const delayTime = baseDelay * Math.pow(2, i);
         console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
         await delay(delayTime);
         continue;
       }
-      
+
       throw error;
     }
   }
@@ -49,13 +52,41 @@ export interface AnalyzedRelationship {
 
 export interface AnalysisResult {
   entities: {
-    people: AnalyzedEntity[];
+    characters: AnalyzedEntity[];
     places: AnalyzedEntity[];
     events: AnalyzedEntity[];
     dates: AnalyzedEntity[];
   };
   relationships: AnalyzedRelationship[];
 }
+
+const promptTemplate = (text: string) => `
+قم بتحليل النص التاريخي العربي التالي واستخراج الكيانات وعلاقاتها.
+يجب أن يكون الإخراج كائن JSON صالحًا فقط بدون أي تنسيق إضافي أو علامات أو شرح.
+يجب أن يكون الرد بالتنسيق التالي تمامًا بدون أي نص آخر:
+\`\`\`json
+{
+  "entities": {
+    "characters": [{"name": "string", "title": "string", "description": "string"}],
+    "places": [{"name": "string", "type": "string", "description": "string"}],
+    "events": [{"name": "string", "type": "string", "description": "string", "date": "string"}],
+    "dates": [{"date": "string", "calendar": "string", "description": "string"}]
+  },
+  "relationships": [
+    {"source": "string", "target": "string", "type": "string", "description": "string"}
+  ]
+}
+\`\`\`
+
+النص المراد تحليله: ${text}
+
+يرجى ملاحظة ما يلي:
+* يجب أن تكون الأسماء باللغة العربية.
+* يجب أن تكون التواريخ بالتنسيق dd/mm/yyyy إذا أمكن.
+* حاول أن تكون الأوصاف موجزة وبلغة عربية سليمة.
+* إذا لم يتم العثور على كيان أو علاقة، يجب أن تكون القائمة الخاصة به فارغة ([]).
+* عند استخراج الشخصيات ، ركز على الشخصيات الهامة أو المؤثرة في القصة / النص.
+`;
 
 export async function analyzeText(text: string): Promise<AnalysisResult> {
   try {
@@ -65,39 +96,24 @@ export async function analyzeText(text: string): Promise<AnalysisResult> {
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const prompt = `Analyze the following Arabic historical text and extract entities with their relationships.
-Return ONLY a valid JSON object with no additional formatting, markdown, or explanation.
-The response should be exactly in this format without any other text:
-{
-  "entities": {
-    "people": [{"name": "string", "title": "string", "description": "string"}],
-    "places": [{"name": "string", "type": "string", "description": "string"}],
-    "events": [{"name": "string", "type": "string", "description": "string", "date": "string"}],
-    "dates": [{"date": "string", "calendar": "string", "description": "string"}]
-  },
-  "relationships": [
-    {"source": "string", "target": "string", "type": "string", "description": "string"}
-  ]
-}
-
-Text to analyze: ${text}`;
+    const prompt = promptTemplate(text);
 
     const generateContent = async () => {
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let responseText = response.text();
-      
+
       // Clean up the response to ensure it's valid JSON
       responseText = responseText.trim();
-      
+
       // Remove any markdown code block indicators
-      responseText = responseText.replace(/```json\n/g, '');
-      responseText = responseText.replace(/```\n/g, '');
-      responseText = responseText.replace(/```/g, '');
-      
+      responseText = responseText.replace(/```json\n/g, "");
+      responseText = responseText.replace(/```\n/g, "");
+      responseText = responseText.replace(/```/g, "");
+
       // Handle potential line breaks and spaces
       responseText = responseText.trim();
-      
+
       return responseText;
     };
 
@@ -105,25 +121,37 @@ Text to analyze: ${text}`;
 
     try {
       const parsed = JSON.parse(responseText);
-      
+
       // Validate the structure and provide defaults
-      return {
+      const result: AnalysisResult = {
         entities: {
-          people: Array.isArray(parsed.entities?.people) ? parsed.entities.people : [],
-          places: Array.isArray(parsed.entities?.places) ? parsed.entities.places : [],
-          events: Array.isArray(parsed.entities?.events) ? parsed.entities.events : [],
-          dates: Array.isArray(parsed.entities?.dates) ? parsed.entities.dates : [],
+          characters: Array.isArray(parsed.entities?.characters)
+            ? parsed.entities.characters
+            : [],
+          places: Array.isArray(parsed.entities?.places)
+            ? parsed.entities.places
+            : [],
+          events: Array.isArray(parsed.entities?.events)
+            ? parsed.entities.events
+            : [],
+          dates: Array.isArray(parsed.entities?.dates)
+            ? parsed.entities.dates
+            : [],
         },
-        relationships: Array.isArray(parsed.relationships) ? parsed.relationships : [],
+        relationships: Array.isArray(parsed.relationships)
+          ? parsed.relationships
+          : [],
       };
+
+      return result;
     } catch (e) {
       console.error("Failed to parse Gemini response:", e);
       console.log("Raw response:", responseText);
-      
+
       // Return empty data structure on parse error
       return {
         entities: {
-          people: [],
+          characters: [],
           places: [],
           events: [],
           dates: [],
