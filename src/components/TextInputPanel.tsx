@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -14,7 +14,7 @@ interface TextInputPanelProps {
   onSave?: (text: string) => void;
   onReset?: () => void;
   isProcessing?: boolean;
-  detectedEntities: AnalysisResult["entities"];
+  initialAnalysisResult?: AnalysisResult; // Make AnalysisResult optional
 }
 
 const TextInputPanel = ({
@@ -22,23 +22,34 @@ const TextInputPanel = ({
   onSave = () => console.log("Save text"),
   onReset = () => console.log("Reset text"),
   isProcessing: externalIsProcessing = false,
-  detectedEntities,
+  initialAnalysisResult, // Use initialAnalysisResult prop
 }: TextInputPanelProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (initialAnalysisResult) {
+      setAnalysisResult(initialAnalysisResult);
+    }
+  }, [initialAnalysisResult]);
 
   const handleFileUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     if (file) {
       try {
-        const text = await file.text();
-        setText(text);
+        const fileText = await file.text();
+        setText(fileText);
         setError(null);
       } catch (err) {
         setError("Failed to read file");
@@ -56,11 +67,15 @@ const TextInputPanel = ({
       setIsProcessing(true);
       setError(null);
       const result = await analyzeText(text);
+      setAnalysisResult(result); // Store analysis result in state
       onAnalysisComplete(result);
     } catch (err: any) {
-      if (err?.message?.includes("503") || err?.message?.includes("overloaded")) {
+      if (
+        err?.message?.includes("503") ||
+        err?.message?.includes("overloaded")
+      ) {
         setError(
-          "The service is currently overloaded. Please try again in a few moments."
+          "The service is currently overloaded. Please try again in a few moments.",
         );
       } else if (err?.message?.includes("API key")) {
         setError("API configuration error. Please contact support.");
@@ -134,6 +149,7 @@ const TextInputPanel = ({
               setText("");
               setError(null);
               onReset();
+              setAnalysisResult(null); // clear the analysis when resetting the form
             }}
           >
             <RotateCcw className="w-4 h-4" />
@@ -151,7 +167,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">People</h4>
                 <div className="flex flex-wrap gap-2">
-                  {detectedEntities.people.map((person, index) => (
+                  {analysisResult?.entities.people.map((person, index) => (
                     <Badge key={index} variant="secondary">
                       {person.name}
                     </Badge>
@@ -162,7 +178,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Places</h4>
                 <div className="flex flex-wrap gap-2">
-                  {detectedEntities.places.map((place, index) => (
+                  {analysisResult?.entities.places.map((place, index) => (
                     <Badge key={index} variant="outline">
                       {place.name}
                     </Badge>
@@ -173,7 +189,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Events</h4>
                 <div className="flex flex-wrap gap-2">
-                  {detectedEntities.events.map((event, index) => (
+                  {analysisResult?.entities.events.map((event, index) => (
                     <Badge key={index} variant="secondary">
                       {event.name}
                     </Badge>
@@ -184,9 +200,20 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Dates</h4>
                 <div className="flex flex-wrap gap-2">
-                  {detectedEntities.dates.map((date, index) => (
+                  {analysisResult?.entities.dates.map((date, index) => (
                     <Badge key={index} variant="outline">
                       {date.date}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Others</h4>
+                <div className="flex flex-wrap gap-2">
+                  {analysisResult?.entities.others.map((other, index) => (
+                    <Badge key={index} variant="ghost">
+                      {other.name}
                     </Badge>
                   ))}
                 </div>
