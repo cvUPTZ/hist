@@ -45,7 +45,7 @@ async function retryWithExponentialBackoff<T>(
         error?.message?.includes("overloaded")
       ) {
         const delayTime = baseDelay * Math.pow(2, i);
-        console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
+        console.log(`Retry ${i + 1}/${maxRetries}ms`);
         await delay(delayTime);
         continue;
       }
@@ -106,7 +106,8 @@ const analyzeEntitiesWithGemini = async (text: string): Promise<Entity[]> => {
       const parsedEntities: any[] = JSON.parse(responseText);
 
       // Validate and map to Entity interface
-      const entities: Entity[] = parsedEntities.map((item) => ({
+      const entities: Entity[] = parsedEntities.map((item: any) => ({
+        // Added explicit 'any' type
         text: item.text,
         type: item.type,
         confidence: item.confidence,
@@ -141,7 +142,7 @@ const analyzeRelationshipsWithGemini = async (
             يجب أن يكون الإخراج عبارة عن مصفوفة JSON صالحة. كل كائن في المصفوفة يجب أن يحتوي على:
             - source: نص الكيان المصدر
             - target: نص الكيان الهدف
-            - type: نوع العلاقة (مثل "authored"، "located_in"، "part_of"، "related_to")
+            - type: نوع العلاقة (مثل "authored"، "located_in"، "part_of"، "related_to", "military", "governed_by")
             - description: وصف موجز للعلاقة
 
             الكيانات الموجودة في النص:
@@ -180,7 +181,8 @@ const analyzeRelationshipsWithGemini = async (
       const parsedRelationships: any[] = JSON.parse(responseText);
 
       const relationships: ProcessedText["relationships"] =
-        parsedRelationships.map((item) => ({
+        parsedRelationships.map((item: any) => ({
+          // added explicit 'any'
           source: item.source,
           target: item.target,
           type: item.type,
