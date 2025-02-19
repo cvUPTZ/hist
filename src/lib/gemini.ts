@@ -16,19 +16,14 @@ async function retryWithExponentialBackoff<T>(
       return await operation();
     } catch (error) {
       lastError = error;
-
-      // Check if it's a 503 error
-      if (
-        error?.message?.includes("503") ||
-        error?.message?.includes("overloaded")
-      ) {
+      
+      if (error?.message?.includes("503") || error?.message?.includes("overloaded")) {
         const delayTime = baseDelay * Math.pow(2, i);
         console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
         await delay(delayTime);
         continue;
       }
-
-      // For other errors, throw immediately
+      
       throw error;
     }
   }
@@ -36,7 +31,33 @@ async function retryWithExponentialBackoff<T>(
   throw lastError;
 }
 
-export async function analyzeText(text: string) {
+export interface AnalyzedEntity {
+  name: string;
+  title?: string;
+  type?: string;
+  description?: string;
+  date?: string;
+  calendar?: string;
+}
+
+export interface AnalyzedRelationship {
+  source: string;
+  target: string;
+  type: string;
+  description?: string;
+}
+
+export interface AnalysisResult {
+  entities: {
+    people: AnalyzedEntity[];
+    places: AnalyzedEntity[];
+    events: AnalyzedEntity[];
+    dates: AnalyzedEntity[];
+  };
+  relationships: AnalyzedRelationship[];
+}
+
+export async function analyzeText(text: string): Promise<AnalysisResult> {
   try {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
       throw new Error("Gemini API key is not configured");
@@ -44,50 +65,62 @@ export async function analyzeText(text: string) {
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const prompt = `Analyze the following Arabic historical text and extract entities in the following categories:
-  - People (including titles, roles)
-  - Places (cities, regions, countries)
-  - Events (battles, political events, cultural events)
-  - Dates (both Hijri and Gregorian)
-  - Relationships between entities
-
-Text: ${text}
-
-Provide the output in JSON format with the following structure:
+    const prompt = `Analyze the following Arabic historical text and extract entities with their relationships.
+Return ONLY a valid JSON object with no additional formatting, markdown, or explanation.
+The response should be exactly in this format without any other text:
 {
   "entities": {
-    "people": [{"name": "...", "title": "...", "description": "..."}],
-    "places": [{"name": "...", "type": "...", "description": "..."}],
-    "events": [{"name": "...", "type": "...", "description": "...", "date": "..."}],
-    "dates": [{"date": "...", "calendar": "hijri|gregorian", "description": "..."}]
+    "people": [{"name": "string", "title": "string", "description": "string"}],
+    "places": [{"name": "string", "type": "string", "description": "string"}],
+    "events": [{"name": "string", "type": "string", "description": "string", "date": "string"}],
+    "dates": [{"date": "string", "calendar": "string", "description": "string"}]
   },
   "relationships": [
-    {"source": "...", "target": "...", "type": "...", "description": "..."}
+    {"source": "string", "target": "string", "type": "string", "description": "string"}
   ]
-}`;
+}
+
+Text to analyze: ${text}`;
 
     const generateContent = async () => {
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      return response.text();
+      let responseText = response.text();
+      
+      // Clean up the response to ensure it's valid JSON
+      responseText = responseText.trim();
+      
+      // Remove any markdown code block indicators
+      responseText = responseText.replace(/```json\n/g, '');
+      responseText = responseText.replace(/```\n/g, '');
+      responseText = responseText.replace(/```/g, '');
+      
+      // Handle potential line breaks and spaces
+      responseText = responseText.trim();
+      
+      return responseText;
     };
 
     const responseText = await retryWithExponentialBackoff(generateContent);
 
     try {
       const parsed = JSON.parse(responseText);
+      
+      // Validate the structure and provide defaults
       return {
         entities: {
-          people: parsed.entities?.people || [],
-          places: parsed.entities?.places || [],
-          events: parsed.entities?.events || [],
-          dates: parsed.entities?.dates || [],
+          people: Array.isArray(parsed.entities?.people) ? parsed.entities.people : [],
+          places: Array.isArray(parsed.entities?.places) ? parsed.entities.places : [],
+          events: Array.isArray(parsed.entities?.events) ? parsed.entities.events : [],
+          dates: Array.isArray(parsed.entities?.dates) ? parsed.entities.dates : [],
         },
-        relationships: parsed.relationships || [],
+        relationships: Array.isArray(parsed.relationships) ? parsed.relationships : [],
       };
     } catch (e) {
       console.error("Failed to parse Gemini response:", e);
       console.log("Raw response:", responseText);
+      
+      // Return empty data structure on parse error
       return {
         entities: {
           people: [],
@@ -100,6 +133,6 @@ Provide the output in JSON format with the following structure:
     }
   } catch (error) {
     console.error("Error analyzing text:", error);
-    throw error; // Let the component handle the error
+    throw error;
   }
 }
