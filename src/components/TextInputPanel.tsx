@@ -7,33 +7,22 @@ import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
 import { Play, Save, FileUp, RotateCcw } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
+import { analyzeText, AnalysisResult } from "@/lib/gemini";
 
 interface TextInputPanelProps {
-  onProcessText?: (text: string) => void;
+  onAnalysisComplete: (result: AnalysisResult) => void;
   onSave?: (text: string) => void;
   onReset?: () => void;
-  onFileUpload?: (file: File) => void;
   isProcessing?: boolean;
-  detectedEntities?: {
-    people: string[];
-    places: string[];
-    events: string[];
-    dates: string[];
-  };
+  detectedEntities: AnalysisResult["entities"];
 }
 
 const TextInputPanel = ({
-  onProcessText = (text: string) => console.log("Process text", text),
+  onAnalysisComplete,
   onSave = () => console.log("Save text"),
   onReset = () => console.log("Reset text"),
-  onFileUpload = () => console.log("File uploaded"),
   isProcessing: externalIsProcessing = false,
-  detectedEntities = {
-    people: ["Ibn Khaldun", "Al-Tabari", "Al-Biruni"],
-    places: ["Baghdad", "Damascus", "Cairo"],
-    events: ["Battle of Badr", "Fall of Granada"],
-    dates: ["632 CE", "750 CE", "1258 CE"],
-  },
+  detectedEntities,
 }: TextInputPanelProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
@@ -44,15 +33,12 @@ const TextInputPanel = ({
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       try {
         const text = await file.text();
         setText(text);
-        onFileUpload(file);
         setError(null);
       } catch (err) {
         setError("Failed to read file");
@@ -69,14 +55,12 @@ const TextInputPanel = ({
     try {
       setIsProcessing(true);
       setError(null);
-      await onProcessText(text);
+      const result = await analyzeText(text);
+      onAnalysisComplete(result);
     } catch (err: any) {
-      if (
-        err?.message?.includes("503") ||
-        err?.message?.includes("overloaded")
-      ) {
+      if (err?.message?.includes("503") || err?.message?.includes("overloaded")) {
         setError(
-          "The service is currently overloaded. Please try again in a few moments.",
+          "The service is currently overloaded. Please try again in a few moments."
         );
       } else if (err?.message?.includes("API key")) {
         setError("API configuration error. Please contact support.");
@@ -140,7 +124,7 @@ const TextInputPanel = ({
               ? "Processing..."
               : "Process Text"}
           </Button>
-          <Button variant="outline" onClick={onSave}>
+          <Button variant="outline" onClick={() => onSave(text)}>
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>
@@ -169,7 +153,7 @@ const TextInputPanel = ({
                 <div className="flex flex-wrap gap-2">
                   {detectedEntities.people.map((person, index) => (
                     <Badge key={index} variant="secondary">
-                      {person}
+                      {person.name}
                     </Badge>
                   ))}
                 </div>
@@ -180,7 +164,7 @@ const TextInputPanel = ({
                 <div className="flex flex-wrap gap-2">
                   {detectedEntities.places.map((place, index) => (
                     <Badge key={index} variant="outline">
-                      {place}
+                      {place.name}
                     </Badge>
                   ))}
                 </div>
@@ -191,7 +175,7 @@ const TextInputPanel = ({
                 <div className="flex flex-wrap gap-2">
                   {detectedEntities.events.map((event, index) => (
                     <Badge key={index} variant="secondary">
-                      {event}
+                      {event.name}
                     </Badge>
                   ))}
                 </div>
@@ -202,7 +186,7 @@ const TextInputPanel = ({
                 <div className="flex flex-wrap gap-2">
                   {detectedEntities.dates.map((date, index) => (
                     <Badge key={index} variant="outline">
-                      {date}
+                      {date.date}
                     </Badge>
                   ))}
                 </div>
