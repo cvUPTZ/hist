@@ -1,7 +1,10 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 interface Entity {
   text: string;
-  type: "person" | "place" | "event" | "date";
+  type: "person" | "place" | "event" | "date" | "other";
   confidence: number;
+  indices: [number, number];
 }
 
 interface ProcessedText {
@@ -10,126 +13,195 @@ interface ProcessedText {
     places: string[];
     events: string[];
     dates: string[];
+    others: string[]; // Added 'other' category
   };
   relationships: Array<{
     source: string;
     target: string;
     type: string;
+    description?: string;
   }>;
 }
 
-const detectEntities = (text: string): Entity[] => {
-  const entities: Entity[] = [];
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
-  // Arabic patterns
-  const datePatterns = [
-    // Hijri dates
-    /\b(\d{1,4})\s*(هـ|هجري|للهجرة)\b/g,
-    // Gregorian dates with Arabic markers
-    /\b(\d{1,4})\s*(م|ميلادي|للميلاد)\b/g,
-    // Year mentions
-    /\b(سنة|عام)\s+(\d{1,4})\b/g,
-    // Century mentions
-    /\b(القرن)\s+[\u0660-\u0669]{1,2}\b/g,
-  ];
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const namePatterns = [
-    // Common Arabic name prefixes
-    /\b(ابن|أبو|أبي|بن|عبد|ال)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){1,3}\b/g,
-    // Names with titles
-    /\b(الإمام|الشيخ|السلطان|الخليفة|الملك|الأمير|العالم|القاضي)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){1,3}\b/g,
-    // Names with Al-
-    /\b(ال|آل)[\u0600-\u06FF]+\b/g,
-  ];
+async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+): Promise<T> {
+  let lastError;
 
-  const placePatterns = [
-    // Places with prefixes
-    /\b(مدينة|بلاد|مملكة|خلافة|دولة|إمارة|سلطنة)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,2}\b/g,
-    // Major Islamic cities
-    /\b(مكة|المدينة|بغداد|دمشق|القاهرة|الأندلس|قرطبة|فاس|تونس|صنعاء|حلب|الكوفة|البصرة)\b/g,
-    // Regions
-    /\b(الشام|العراق|مصر|المغرب|الأندلس|خراسان|الحجاز|اليمن)\b/g,
-  ];
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
 
-  const eventPatterns = [
-    // Military events
-    /\b(معركة|غزوة|فتح|حصار|سقوط)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,3}\b/g,
-    // Political events
-    /\b(ثورة|انقلاب|تأسيس|بيعة|عزل|تولية)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,3}\b/g,
-    // Cultural events
-    /\b(مجلس|حلقة|مدرسة)\s+[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,3}\b/g,
-  ];
-
-  // Helper function to process patterns
-  const processPatterns = (
-    patterns: RegExp[],
-    type: Entity["type"],
-    baseConfidence: number,
-  ) => {
-    patterns.forEach((pattern, index) => {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        // Avoid duplicates
-        if (!entities.some((e) => e.text === match![0])) {
-          entities.push({
-            text: match[0],
-            type,
-            confidence: baseConfidence - index * 0.1, // Decrease confidence for secondary patterns
-          });
-        }
+      if (
+        error?.message?.includes("503") ||
+        error?.message?.includes("overloaded")
+      ) {
+        const delayTime = baseDelay * Math.pow(2, i);
+        console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
+        await delay(delayTime);
+        continue;
       }
-    });
-  };
 
-  // Process all patterns
-  processPatterns(datePatterns, "date", 0.9);
-  processPatterns(namePatterns, "person", 0.85);
-  processPatterns(placePatterns, "place", 0.8);
-  processPatterns(eventPatterns, "event", 0.75);
-
-  // Detect relationships based on proximity and context
-  const relationships: Array<{
-    source: string;
-    target: string;
-    type: string;
-  }> = [];
-
-  // Find relationships between entities that appear close to each other
-  for (let i = 0; i < entities.length; i++) {
-    for (let j = i + 1; j < entities.length; j++) {
-      const distance =
-        text.indexOf(entities[j].text) - text.indexOf(entities[i].text);
-      if (distance > 0 && distance < 100) {
-        // Entities within 100 characters
-        // Check for relationship indicators between entities
-        const textBetween = text.substring(
-          text.indexOf(entities[i].text) + entities[i].text.length,
-          text.indexOf(entities[j].text),
-        );
-
-        // Common Arabic relationship indicators
-        if (textBetween.match(/\b(كتب|ألف|صنف)\b/)) {
-          relationships.push({
-            source: entities[i].text,
-            target: entities[j].text,
-            type: "authored",
-          });
-        } else if (textBetween.match(/\b(في عهد|في زمن|في فترة)\b/)) {
-          relationships.push({
-            source: entities[i].text,
-            target: entities[j].text,
-            type: "during",
-          });
-        }
-      }
+      throw error;
     }
   }
 
-  return entities;
+  throw lastError;
+}
+
+const analyzeEntitiesWithGemini = async (text: string): Promise<Entity[]> => {
+  try {
+    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+      throw new Error("Gemini API key is not configured");
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    const prompt = `
+      قم بتحليل النص العربي التالي واستخراج الكيانات وتحديد نوعها (شخص، مكان، حدث، تاريخ، أو غير ذلك).
+      يجب أن يكون الإخراج عبارة عن مصفوفة JSON صالحة. كل كائن في المصفوفة يجب أن يحتوي على:
+      - text: النص المستخرج
+      - type: نوع الكيان (person, place, event, date, other)
+      - confidence: قيمة بين 0 و 1 تمثل مدى الثقة في تحديد النوع
+      - indices: مصفوفة تحتوي على فهرسين: بداية ونهاية النص المستخرج في النص الأصلي
+
+      مثال على الإخراج:
+      \`\`\`json
+      [
+        {"text": "صلاح الدين الأيوبي", "type": "person", "confidence": 0.95, "indices": [5, 20]},
+        {"text": "حطين", "type": "place", "confidence": 0.90, "indices": [35, 40]},
+        {"text": "1187", "type": "date", "confidence": 0.85, "indices": [25, 29]},
+        {"text": "معركة", "type": "event", "confidence": 0.80, "indices": [30, 34]}
+      ]
+      \`\`\`
+
+      النص المراد تحليله: ${text}
+    `;
+
+    const generateContent = async () => {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let responseText = response.text();
+
+      responseText = responseText.trim();
+      responseText = responseText.replace(/```json\n/g, "");
+      responseText = responseText.replace(/```\n/g, "");
+      responseText = responseText.replace(/```/g, "");
+      responseText = responseText.trim();
+
+      return responseText;
+    };
+
+    const responseText = await retryWithExponentialBackoff(generateContent);
+
+    try {
+      const parsedEntities: any[] = JSON.parse(responseText);
+
+      // Validate and map to Entity interface
+      const entities: Entity[] = parsedEntities.map((item) => ({
+        text: item.text,
+        type: item.type,
+        confidence: item.confidence,
+        indices: item.indices,
+      }));
+
+      return entities;
+    } catch (e) {
+      console.error("Failed to parse Gemini response:", e);
+      console.log("Raw response:", responseText);
+      return [];
+    }
+  } catch (error) {
+    console.error("Error analyzing text with Gemini:", error);
+    return [];
+  }
 };
 
-export const processText = (text: string): ProcessedText => {
-  const entities = detectEntities(text);
+const analyzeRelationshipsWithGemini = async (
+  text: string,
+  entities: Entity[],
+): Promise<ProcessedText["relationships"]> => {
+  try {
+    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+      throw new Error("Gemini API key is not configured");
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    const prompt = `
+            قم بتحليل النص العربي التالي واستخراج العلاقات بين الكيانات الموجودة.
+            يجب أن يكون الإخراج عبارة عن مصفوفة JSON صالحة. كل كائن في المصفوفة يجب أن يحتوي على:
+            - source: نص الكيان المصدر
+            - target: نص الكيان الهدف
+            - type: نوع العلاقة (مثل "authored"، "located_in"، "part_of"، "related_to")
+            - description: وصف موجز للعلاقة
+
+            الكيانات الموجودة في النص:
+            \`\`\`json
+            ${JSON.stringify(entities, null, 2)}
+            \`\`\`
+
+            مثال على الإخراج:
+            \`\`\`json
+            [
+              {"source": "صلاح الدين الأيوبي", "target": "حطين", "type": "military", "description": "قاد صلاح الدين الأيوبي المسلمين في معركة حطين."},
+              {"source": "حطين", "target": "فلسطين", "type": "located_in", "description": "تقع حطين في فلسطين"}
+            ]
+            \`\`\`
+
+            النص المراد تحليله: ${text}
+        `;
+
+    const generateContent = async () => {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let responseText = response.text();
+
+      responseText = responseText.trim();
+      responseText = responseText.replace(/```json\n/g, "");
+      responseText = responseText.replace(/```\n/g, "");
+      responseText = responseText.replace(/```/g, "");
+      responseText = responseText.trim();
+
+      return responseText;
+    };
+
+    const responseText = await retryWithExponentialBackoff(generateContent);
+
+    try {
+      const parsedRelationships: any[] = JSON.parse(responseText);
+
+      const relationships: ProcessedText["relationships"] =
+        parsedRelationships.map((item) => ({
+          source: item.source,
+          target: item.target,
+          type: item.type,
+          description: item.description,
+        }));
+
+      return relationships;
+    } catch (e) {
+      console.error("Failed to parse Gemini response:", e);
+      console.log("Raw response:", responseText);
+      return [];
+    }
+  } catch (error) {
+    console.error("Error analyzing relationships with Gemini:", error);
+    return [];
+  }
+};
+
+export const processText = async (text: string): Promise<ProcessedText> => {
+  const entities = await analyzeEntitiesWithGemini(text);
+  const relationships = await analyzeRelationshipsWithGemini(text, entities);
 
   const result: ProcessedText = {
     entities: {
@@ -137,11 +209,12 @@ export const processText = (text: string): ProcessedText => {
       places: [],
       events: [],
       dates: [],
+      others: [],
     },
-    relationships: [],
+    relationships: relationships,
   };
 
-  // Group entities by type and remove duplicates
+  // Group entities by type
   entities.forEach((entity) => {
     switch (entity.type) {
       case "person":
@@ -162,6 +235,11 @@ export const processText = (text: string): ProcessedText => {
       case "date":
         if (!result.entities.dates.includes(entity.text)) {
           result.entities.dates.push(entity.text);
+        }
+        break;
+      default:
+        if (!result.entities.others.includes(entity.text)) {
+          result.entities.others.push(entity.text);
         }
         break;
     }
