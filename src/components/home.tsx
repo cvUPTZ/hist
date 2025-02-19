@@ -38,7 +38,7 @@ const Home = ({
   const [edges, setEdges] = useState<Edge[]>([]);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult>({
     entities: {
-      people: [],
+      characters: [],
       places: [],
       events: [],
       dates: [],
