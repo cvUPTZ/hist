@@ -14,7 +14,7 @@ interface TextInputPanelProps {
   onSave?: (text: string) => void;
   onReset?: () => void;
   isProcessing?: boolean;
-  initialAnalysisResult?: AnalysisResult; // Make AnalysisResult optional
+  initialAnalysisResult?: AnalysisResult;
 }
 
 const TextInputPanel = ({
@@ -22,15 +22,23 @@ const TextInputPanel = ({
   onSave = () => console.log("Save text"),
   onReset = () => console.log("Reset text"),
   isProcessing: externalIsProcessing = false,
-  initialAnalysisResult, // Use initialAnalysisResult prop
+  initialAnalysisResult,
 }: TextInputPanelProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
-    null,
-  );
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult>({
+    // Provide default values
+    entities: {
+      people: [],
+      places: [],
+      events: [],
+      dates: [],
+      others: [],
+    },
+    relationships: [],
+  });
 
   useEffect(() => {
     if (initialAnalysisResult) {
@@ -149,7 +157,6 @@ const TextInputPanel = ({
               setText("");
               setError(null);
               onReset();
-              setAnalysisResult(null); // clear the analysis when resetting the form
             }}
           >
             <RotateCcw className="w-4 h-4" />
@@ -167,7 +174,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">People</h4>
                 <div className="flex flex-wrap gap-2">
-                  {analysisResult?.entities.people.map((person, index) => (
+                  {analysisResult.entities.people.map((person, index) => (
                     <Badge key={index} variant="secondary">
                       {person.name}
                     </Badge>
@@ -178,7 +185,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Places</h4>
                 <div className="flex flex-wrap gap-2">
-                  {analysisResult?.entities.places.map((place, index) => (
+                  {analysisResult.entities.places.map((place, index) => (
                     <Badge key={index} variant="outline">
                       {place.name}
                     </Badge>
@@ -189,7 +196,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Events</h4>
                 <div className="flex flex-wrap gap-2">
-                  {analysisResult?.entities.events.map((event, index) => (
+                  {analysisResult.entities.events.map((event, index) => (
                     <Badge key={index} variant="secondary">
                       {event.name}
                     </Badge>
@@ -200,7 +207,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Dates</h4>
                 <div className="flex flex-wrap gap-2">
-                  {analysisResult?.entities.dates.map((date, index) => (
+                  {analysisResult.entities.dates.map((date, index) => (
                     <Badge key={index} variant="outline">
                       {date.date}
                     </Badge>
@@ -211,7 +218,7 @@ const TextInputPanel = ({
               <div>
                 <h4 className="text-sm font-semibold mb-2">Others</h4>
                 <div className="flex flex-wrap gap-2">
-                  {analysisResult?.entities.others.map((other, index) => (
+                  {analysisResult.entities.others.map((other, index) => (
                     <Badge key={index} variant="ghost">
                       {other.name}
                     </Badge>

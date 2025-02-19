@@ -88,6 +88,41 @@ const promptTemplate = (text: string) => `
 * عند استخراج الشخصيات ، ركز على الشخصيات الهامة أو المؤثرة في القصة / النص.
 `;
 
+// Helper function to parse JSON safely and provide default values
+const parseAnalysisResult = (responseText: string): AnalysisResult => {
+  try {
+    const parsed = JSON.parse(responseText);
+
+    const createSafeArray = <T>(arr: any): T[] =>
+      Array.isArray(arr) ? arr : [];
+
+    // Validate and provide defaults
+    return {
+      entities: {
+        characters: createSafeArray(parsed.entities?.characters),
+        places: createSafeArray(parsed.entities?.places),
+        events: createSafeArray(parsed.entities?.events),
+        dates: createSafeArray(parsed.entities?.dates),
+      },
+      relationships: createSafeArray(parsed.relationships),
+    };
+  } catch (e) {
+    console.error("Failed to parse Gemini response:", e);
+    console.log("Raw response:", responseText);
+
+    // Return empty data structure on parse error
+    return {
+      entities: {
+        characters: [],
+        places: [],
+        events: [],
+        dates: [],
+      },
+      relationships: [],
+    };
+  }
+};
+
 export async function analyzeText(text: string): Promise<AnalysisResult> {
   try {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
@@ -119,46 +154,7 @@ export async function analyzeText(text: string): Promise<AnalysisResult> {
 
     const responseText = await retryWithExponentialBackoff(generateContent);
 
-    try {
-      const parsed = JSON.parse(responseText);
-
-      // Validate the structure and provide defaults
-      const result: AnalysisResult = {
-        entities: {
-          characters: Array.isArray(parsed.entities?.characters)
-            ? parsed.entities.characters
-            : [],
-          places: Array.isArray(parsed.entities?.places)
-            ? parsed.entities.places
-            : [],
-          events: Array.isArray(parsed.entities?.events)
-            ? parsed.entities.events
-            : [],
-          dates: Array.isArray(parsed.entities?.dates)
-            ? parsed.entities.dates
-            : [],
-        },
-        relationships: Array.isArray(parsed.relationships)
-          ? parsed.relationships
-          : [],
-      };
-
-      return result;
-    } catch (e) {
-      console.error("Failed to parse Gemini response:", e);
-      console.log("Raw response:", responseText);
-
-      // Return empty data structure on parse error
-      return {
-        entities: {
-          characters: [],
-          places: [],
-          events: [],
-          dates: [],
-        },
-        relationships: [],
-      };
-    }
+    return parseAnalysisResult(responseText);
   } catch (error) {
     console.error("Error analyzing text:", error);
     throw error;
