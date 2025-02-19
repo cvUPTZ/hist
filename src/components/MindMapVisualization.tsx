@@ -8,6 +8,7 @@ interface Node {
   type: string;
   title: string;
   description: string;
+  subtitle?: string;
   x: number;
   y: number;
   relationships: Array<{
@@ -18,56 +19,22 @@ interface Node {
 }
 
 interface Edge {
+  id: string;
   source: string;
   target: string;
   type: string;
 }
 
 interface MindMapVisualizationProps {
-  nodes?: Node[];
-  edges?: Edge[];
+  nodes: Node[];
+  edges: Edge[];
   onNodeClick?: (nodeId: string) => void;
   onNodeDrag?: (nodeId: string, x: number, y: number) => void;
 }
 
 const MindMapVisualization = ({
-  nodes = [
-    {
-      id: "1",
-      type: "Historical Figure",
-      title: "Ibn Khaldun",
-      description:
-        "A prominent Arab historian and scholar who wrote the Muqaddimah.",
-      x: 400,
-      y: 300,
-      relationships: [
-        { type: "Wrote", entity: "Muqaddimah" },
-        { type: "Influenced", entity: "Islamic Historiography" },
-      ],
-      dates: ["1332 CE", "1406 CE"],
-    },
-    {
-      id: "2",
-      type: "Text",
-      title: "Muqaddimah",
-      description:
-        "A groundbreaking work on social sciences and historiography.",
-      x: 700,
-      y: 300,
-      relationships: [
-        { type: "Author", entity: "Ibn Khaldun" },
-        { type: "Topic", entity: "Social Science" },
-      ],
-      dates: ["1377 CE"],
-    },
-  ],
-  edges = [
-    {
-      source: "1",
-      target: "2",
-      type: "authored",
-    },
-  ],
+  nodes = [],
+  edges = [],
   onNodeClick = (nodeId) => console.log(`Node clicked: ${nodeId}`),
   onNodeDrag = (nodeId, x, y) =>
     console.log(`Node ${nodeId} dragged to ${x},${y}`),
@@ -101,22 +68,32 @@ const MindMapVisualization = ({
         >
           {/* Render edges */}
           <svg className="absolute inset-0 pointer-events-none">
-            {edges.map((edge, index) => {
+            {edges.map((edge) => {
               const sourceNode = nodes.find((n) => n.id === edge.source);
               const targetNode = nodes.find((n) => n.id === edge.target);
               if (!sourceNode || !targetNode) return null;
 
               return (
-                <line
-                  key={index}
-                  x1={sourceNode.x}
-                  y1={sourceNode.y}
-                  x2={targetNode.x}
-                  y2={targetNode.y}
-                  stroke="#94a3b8"
-                  strokeWidth="2"
-                  strokeDasharray="4"
-                />
+                <g key={edge.id}>
+                  <line
+                    x1={sourceNode.x}
+                    y1={sourceNode.y}
+                    x2={targetNode.x}
+                    y2={targetNode.y}
+                    stroke="#94a3b8"
+                    strokeWidth="2"
+                    strokeDasharray="4"
+                  />
+                  <text
+                    x={(sourceNode.x + targetNode.x) / 2}
+                    y={(sourceNode.y + targetNode.y) / 2}
+                    textAnchor="middle"
+                    fill="#64748b"
+                    className="text-xs"
+                  >
+                    {edge.type}
+                  </text>
+                </g>
               );
             })}
           </svg>
@@ -127,8 +104,8 @@ const MindMapVisualization = ({
               key={node.id}
               className="absolute"
               style={{
-                x: node.x - 150, // Center the card (300px width / 2)
-                y: node.y - 100, // Center the card (200px height / 2)
+                x: node.x - 150,
+                y: node.y - 100,
               }}
               drag
               dragMomentum={false}
@@ -136,7 +113,7 @@ const MindMapVisualization = ({
                 onNodeDrag(
                   node.id,
                   node.x + info.offset.x,
-                  node.y + info.offset.y,
+                  node.y + info.offset.y
                 );
               }}
               onClick={() => {
@@ -147,9 +124,11 @@ const MindMapVisualization = ({
               <NodeCard
                 title={node.title}
                 type={node.type}
+                subtitle={node.subtitle}
                 description={node.description}
                 relationships={node.relationships}
                 dates={node.dates}
+                isSelected={selectedNode === node.id}
               />
             </motion.div>
           ))}
