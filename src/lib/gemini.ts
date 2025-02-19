@@ -2,6 +2,40 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+): Promise<T> {
+  let lastError;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      // Check if it's a 503 error
+      if (
+        error?.message?.includes("503") ||
+        error?.message?.includes("overloaded")
+      ) {
+        const delayTime = baseDelay * Math.pow(2, i);
+        console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
+        await delay(delayTime);
+        continue;
+      }
+
+      // For other errors, throw immediately
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 export async function analyzeText(text: string) {
   try {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
@@ -32,9 +66,13 @@ Provide the output in JSON format with the following structure:
   ]
 }`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    const generateContent = async () => {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text();
+    };
+
+    const responseText = await retryWithExponentialBackoff(generateContent);
 
     try {
       const parsed = JSON.parse(responseText);
@@ -62,14 +100,6 @@ Provide the output in JSON format with the following structure:
     }
   } catch (error) {
     console.error("Error analyzing text:", error);
-    return {
-      entities: {
-        people: [],
-        places: [],
-        events: [],
-        dates: [],
-      },
-      relationships: [],
-    };
+    throw error; // Let the component handle the error
   }
 }

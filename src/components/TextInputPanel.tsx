@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -6,6 +6,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
 import { Play, Save, FileUp, RotateCcw } from "lucide-react";
+import { Alert, AlertDescription } from "./ui/alert";
 
 interface TextInputPanelProps {
   onProcessText?: (text: string) => void;
@@ -26,7 +27,7 @@ const TextInputPanel = ({
   onSave = () => console.log("Save text"),
   onReset = () => console.log("Reset text"),
   onFileUpload = () => console.log("File uploaded"),
-  isProcessing = false,
+  isProcessing: externalIsProcessing = false,
   detectedEntities = {
     people: ["Ibn Khaldun", "Al-Tabari", "Al-Biruni"],
     places: ["Baghdad", "Damascus", "Cairo"],
@@ -34,22 +35,56 @@ const TextInputPanel = ({
     dates: ["632 CE", "750 CE", "1258 CE"],
   },
 }: TextInputPanelProps) => {
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleFileUploadClick = () => {
     fileInputRef.current?.click();
   };
-
-  const [text, setText] = React.useState("");
 
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
     if (file) {
-      const text = await file.text();
-      setText(text);
-      onFileUpload(file);
+      try {
+        const text = await file.text();
+        setText(text);
+        onFileUpload(file);
+        setError(null);
+      } catch (err) {
+        setError("Failed to read file");
+      }
+    }
+  };
+
+  const handleProcessText = async () => {
+    if (!text.trim()) {
+      setError("Please enter some text to analyze");
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setError(null);
+      await onProcessText(text);
+    } catch (err: any) {
+      if (
+        err?.message?.includes("503") ||
+        err?.message?.includes("overloaded")
+      ) {
+        setError(
+          "The service is currently overloaded. Please try again in a few moments.",
+        );
+      } else if (err?.message?.includes("API key")) {
+        setError("API configuration error. Please contact support.");
+      } else {
+        setError(err?.message || "An error occurred while processing the text");
+      }
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -82,22 +117,41 @@ const TextInputPanel = ({
             fontFamily: "'Noto Naskh Arabic', 'Amiri', serif",
           }}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
         />
+
+        {error && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex gap-2 mt-4">
           <Button
             className="flex-1"
-            onClick={() => onProcessText(text)}
-            disabled={isProcessing}
+            onClick={handleProcessText}
+            disabled={isProcessing || externalIsProcessing}
           >
             <Play className="w-4 h-4 mr-2" />
-            Process Text
+            {isProcessing || externalIsProcessing
+              ? "Processing..."
+              : "Process Text"}
           </Button>
           <Button variant="outline" onClick={onSave}>
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>
-          <Button variant="outline" onClick={onReset}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setText("");
+              setError(null);
+              onReset();
+            }}
+          >
             <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
