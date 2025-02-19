@@ -22,18 +22,20 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
+export type ExportFormat = "image" | "pdf" | "json";
+
 interface VisualizationToolbarProps {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onPan?: () => void;
-  onExport?: (format: "image" | "pdf" | "json") => void;
+  onExport?: (format: ExportFormat) => void;
 }
 
 const VisualizationToolbar = ({
-  onZoomIn = () => console.log("Zoom in clicked"),
-  onZoomOut = () => console.log("Zoom out clicked"),
-  onPan = () => console.log("Pan clicked"),
-  onExport = (format) => console.log(`Export as ${format} clicked'`),
+  onZoomIn = () => {},
+  onZoomOut = () => {},
+  onPan = () => {},
+  onExport = () => {},
 }: VisualizationToolbarProps) => {
   return (
     <div className="w-full h-12 bg-background border-b flex items-center px-4 gap-2">
@@ -41,62 +43,79 @@ const VisualizationToolbar = ({
         <div className="flex items-center gap-2 border-r pr-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onZoomIn}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={onZoomIn}
+                aria-label="Zoom In"
+              >
                 <ZoomIn className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
+            <TooltipContent side="bottom">
               <p>Zoom In</p>
             </TooltipContent>
           </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onZoomOut}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={onZoomOut}
+                aria-label="Zoom Out"
+              >
                 <ZoomOut className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
+            <TooltipContent side="bottom">
               <p>Zoom Out</p>
             </TooltipContent>
           </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={onPan}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={onPan}
+                aria-label="Pan View"
+              >
                 <Move className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
+            <TooltipContent side="bottom">
               <p>Pan View</p>
             </TooltipContent>
           </Tooltip>
         </div>
 
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <Download className="h-4 w-4" />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => onExport("image")}>
-                <Image className="h-4 w-4 mr-2" />
-                Export as Image
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("pdf")}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as PDF
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("json")}>
-                <FileJson className="h-4 w-4 mr-2" />
-                Export as JSON
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="gap-2"
+              aria-label="Export options"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => onExport("image")}>
+              <Image className="h-4 w-4 mr-2" />
+              Export as Image
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport("pdf")}>
+              <FileText className="h-4 w-4 mr-2" />
+              Export as PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport("json")}>
+              <FileJson className="h-4 w-4 mr-2" />
+              Export as JSON
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </TooltipProvider>
     </div>
   );
