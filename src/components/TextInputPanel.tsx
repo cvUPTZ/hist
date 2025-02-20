@@ -5,9 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ScrollArea } from "./ui/scroll-area";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
-import { Play, Save, FileUp, RotateCcw } from "lucide-react";
+import { Play, Save, FileUp, RotateCcw, FileText } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Progress } from "./ui/progress";
 import { analyzeText, AnalysisResult, AnalyzedEntity } from "@/lib/gemini";
+import { extractTextFromPDF } from "@/lib/pdfProcessing";
 
 interface TextInputPanelProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
@@ -29,6 +31,7 @@ const TextInputPanel = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(initialText);
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(
     initialAnalysisResult || {
@@ -57,15 +60,29 @@ const TextInputPanel = ({
     if (!file) return;
 
     try {
-      if (file.size > 1024 * 1024) {
-        throw new Error("File size exceeds 1MB limit");
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error("File size exceeds 5MB limit");
       }
 
-      const fileText = await file.text();
+      let fileText = "";
+      if (file.type === "application/pdf") {
+        setError("Processing PDF...");
+        setUploadProgress(0);
+        const updateProgress = (progress: number) => {
+          setUploadProgress(progress);
+        };
+        fileText = await extractTextFromPDF(file);
+        updateProgress(100);
+      } else {
+        fileText = await file.text();
+      }
+
       setText(fileText);
       setError(null);
+      setUploadProgress(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to read file");
+      setUploadProgress(0);
     }
   };
 
@@ -102,13 +119,13 @@ const TextInputPanel = ({
             aria-label="Upload text file"
           >
             <FileUp className="w-4 h-4 mr-2" />
-            Upload Text
+            Upload Text/PDF
           </Button>
           <input
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept=".txt"
+            accept=".txt,.pdf"
             onChange={handleFileChange}
             aria-label="Text file input"
           />
@@ -127,8 +144,19 @@ const TextInputPanel = ({
         />
 
         {error && (
-          <Alert variant="destructive" className="mt-2">
-            <AlertDescription>{error}</AlertDescription>
+          <Alert
+            variant={error === "Processing PDF..." ? "default" : "destructive"}
+            className="mt-2"
+          >
+            <AlertDescription className="flex items-center gap-2">
+              {error === "Processing PDF..." && (
+                <FileText className="animate-pulse" />
+              )}
+              {error}
+            </AlertDescription>
+            {error === "Processing PDF..." && (
+              <Progress value={uploadProgress} className="mt-2" />
+            )}
           </Alert>
         )}
 
