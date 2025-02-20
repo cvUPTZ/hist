@@ -202,7 +202,7 @@ const TextInputPanel = ({
           <CardContent>
             {Object.entries(analysisResult.entities).map(
               ([category, entities]) => (
-                <React.Fragment key={category}>
+                <div key={category}>
                   <div className="mt-4 first:mt-0">
                     <h4 className="text-sm font-semibold mb-2 capitalize">
                       {category}
@@ -216,7 +216,7 @@ const TextInputPanel = ({
                     </div>
                   </div>
                   <Separator className="my-3" />
-                </React.Fragment>
+                </div>
               ),
             )}
           </CardContent>
