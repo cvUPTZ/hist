@@ -101,13 +101,6 @@ const promptTemplate = (text: string) => `
       "gregorian": "string",
       "hijri": "string",
       "significance": "string"
-    }],
-    "terms": [{
-      "term": "string",
-      "definition": "string",
-      "field": "string",
-      "context": "string",
-      "relatedTerms": ["string"]
     }]
   },
   "relationships": [
@@ -137,29 +130,79 @@ const promptTemplate = (text: string) => `
 * اذكر أهمية الأماكن والأحداث في السياق التاريخي.
 `;
 
-// Helper function to parse JSON safely and provide default values
+const cleanJsonResponse = (text: string): string => {
+  try {
+    // Remove any markdown code block indicators and extra whitespace
+    let cleaned = text
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .replace(/\n\s*\n/g, "\n")
+      .trim();
+
+    // Remove any non-JSON text before or after the JSON object
+    const jsonStart = cleaned.indexOf("{");
+    const jsonEnd = cleaned.lastIndexOf("}");
+
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
+    }
+
+    // Fix common JSON formatting issues
+    cleaned = cleaned
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]")
+      .replace(/\\/g, "\\\\")
+      .replace(/"\s+"/g, '" "')
+      .replace(/(?<=["'}])\s+(?=[:,])/g, "")
+      .replace(/undefined/g, '""')
+      .replace(/\t/g, " ");
+
+    return cleaned;
+  } catch (error) {
+    console.error("Error cleaning JSON:", error);
+    return text;
+  }
+};
+
 const parseAnalysisResult = (responseText: string): AnalysisResult => {
   try {
-    const parsed = JSON.parse(responseText);
+    const cleanedJson = cleanJsonResponse(responseText);
+    const parsed = JSON.parse(cleanedJson);
 
     const createSafeArray = <T>(arr: any): T[] =>
       Array.isArray(arr) ? arr : [];
 
-    // Validate and provide defaults
-    return {
+    const result: AnalysisResult = {
       entities: {
-        characters: createSafeArray(parsed.entities?.characters),
-        places: createSafeArray(parsed.entities?.places),
-        events: createSafeArray(parsed.entities?.events),
-        dates: createSafeArray(parsed.entities?.dates),
+        characters: createSafeArray(parsed?.entities?.characters || []),
+        places: createSafeArray(parsed?.entities?.places || []),
+        events: createSafeArray(parsed?.entities?.events || []),
+        dates: createSafeArray(parsed?.entities?.dates || []),
       },
-      relationships: createSafeArray(parsed.relationships),
+      relationships: createSafeArray(parsed?.relationships || []),
     };
+
+    // Validate required fields
+    result.entities.characters = result.entities.characters.filter(
+      (char) => char?.name,
+    );
+    result.entities.places = result.entities.places.filter(
+      (place) => place?.name,
+    );
+    result.entities.events = result.entities.events.filter(
+      (event) => event?.name,
+    );
+    result.entities.dates = result.entities.dates.filter((date) => date?.date);
+    result.relationships = result.relationships.filter(
+      (rel) => rel?.source && rel?.target && rel?.type,
+    );
+
+    return result;
   } catch (e) {
     console.error("Failed to parse Gemini response:", e);
     console.log("Raw response:", responseText);
+    console.log("Cleaned response attempted:", cleanJsonResponse(responseText));
 
-    // Return empty data structure on parse error
     return {
       entities: {
         characters: [],
@@ -179,33 +222,18 @@ export async function analyzeText(text: string): Promise<AnalysisResult> {
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
     const prompt = promptTemplate(text);
 
     const generateContent = async () => {
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      let responseText = response.text();
-
-      // Clean up the response to ensure it's valid JSON
-      responseText = responseText.trim();
-
-      // Remove any markdown code block indicators
-      responseText = responseText.replace(/```json\n/g, "");
-      responseText = responseText.replace(/```\n/g, "");
-      responseText = responseText.replace(/```/g, "");
-
-      // Handle potential line breaks and spaces
-      responseText = responseText.trim();
-
-      return responseText;
+      return response.text();
     };
 
     const responseText = await retryWithExponentialBackoff(generateContent);
-
     return parseAnalysisResult(responseText);
   } catch (error) {
     console.error("Error analyzing text:", error);
-    throw error;
+    throw new Error("Failed to analyze text. Please try again.");
   }
 }
