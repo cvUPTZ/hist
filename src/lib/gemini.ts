@@ -61,19 +61,65 @@ export interface AnalysisResult {
 }
 
 const promptTemplate = (text: string) => `
-قم بتحليل النص التاريخي العربي التالي واستخراج الكيانات وعلاقاتها.
+قم بتحليل النص التاريخي العربي التالي واستخراج الكيانات وعلاقاتها بشكل مفصل.
 يجب أن يكون الإخراج كائن JSON صالحًا فقط بدون أي تنسيق إضافي أو علامات أو شرح.
 يجب أن يكون الرد بالتنسيق التالي تمامًا بدون أي نص آخر:
 \`\`\`json
 {
   "entities": {
-    "characters": [{"name": "string", "title": "string", "description": "string"}],
-    "places": [{"name": "string", "type": "string", "description": "string"}],
-    "events": [{"name": "string", "type": "string", "description": "string", "date": "string"}],
-    "dates": [{"date": "string", "calendar": "string", "description": "string"}]
+    "characters": [{
+      "name": "string",
+      "title": "string",
+      "description": "string",
+      "role": "string",
+      "period": "string",
+      "achievements": ["string"],
+      "affiliations": ["string"]
+    }],
+    "places": [{
+      "name": "string",
+      "type": "string",
+      "description": "string",
+      "significance": "string",
+      "period": "string",
+      "coordinates": {"lat": "string", "lng": "string"}
+    }],
+    "events": [{
+      "name": "string",
+      "type": "string",
+      "description": "string",
+      "date": "string",
+      "location": "string",
+      "participants": ["string"],
+      "outcomes": ["string"],
+      "significance": "string"
+    }],
+    "dates": [{
+      "date": "string",
+      "calendar": "string",
+      "description": "string",
+      "gregorian": "string",
+      "hijri": "string",
+      "significance": "string"
+    }],
+    "terms": [{
+      "term": "string",
+      "definition": "string",
+      "field": "string",
+      "context": "string",
+      "relatedTerms": ["string"]
+    }]
   },
   "relationships": [
-    {"source": "string", "target": "string", "type": "string", "description": "string"}
+    {
+      "source": "string",
+      "target": "string",
+      "type": "string",
+      "description": "string",
+      "strength": "number",
+      "timespan": "string",
+      "evidence": "string"
+    }
   ]
 }
 \`\`\`
@@ -82,10 +128,13 @@ const promptTemplate = (text: string) => `
 
 يرجى ملاحظة ما يلي:
 * يجب أن تكون الأسماء باللغة العربية.
-* يجب أن تكون التواريخ بالتنسيق dd/mm/yyyy إذا أمكن.
+* يجب أن تكون التواريخ بالتنسيق dd/mm/yyyy إذا أمكن، مع توفير التقويمين الهجري والميلادي.
 * حاول أن تكون الأوصاف موجزة وبلغة عربية سليمة.
-* إذا لم يتم العثور على كيان أو علاقة، يجب أن تكون القائمة الخاصة به فارغة ([]).
-* عند استخراج الشخصيات ، ركز على الشخصيات الهامة أو المؤثرة في القصة / النص.
+* اذكر المصادر والأدلة للعلاقات حيثما أمكن.
+* قم بتقييم قوة العلاقات على مقياس من 0 إلى 1.
+* استخرج المصطلحات التاريخية والعلمية المهمة وشرحها.
+* حدد الأدوار والانتماءات للشخصيات.
+* اذكر أهمية الأماكن والأحداث في السياق التاريخي.
 `;
 
 // Helper function to parse JSON safely and provide default values
