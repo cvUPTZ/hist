@@ -1,4 +1,65 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import Ajv from "ajv";
+
+// Initialisation du validateur JSON Schema
+const ajv = new Ajv({ allErrors: true });
+const analysisSchema = {
+  type: "object",
+  properties: {
+    entities: {
+      type: "object",
+      properties: {
+        characters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"],
+          },
+        },
+        places: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"],
+          },
+        },
+        events: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"],
+          },
+        },
+        dates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { date: { type: "string" } },
+            required: ["date"],
+          },
+        },
+      },
+      required: ["characters", "places", "events", "dates"],
+    },
+    relationships: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          source: { type: "string" },
+          target: { type: "string" },
+          type: { type: "string" },
+        },
+        required: ["source", "target", "type"],
+      },
+    },
+  },
+  required: ["entities", "relationships"],
+};
+const validateAnalysis = ajv.compile(analysisSchema);
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
@@ -10,13 +71,11 @@ async function retryWithExponentialBackoff<T>(
   baseDelay: number = 1000,
 ): Promise<T> {
   let lastError;
-
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await operation();
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
-
       if (
         error?.message?.includes("503") ||
         error?.message?.includes("overloaded")
@@ -26,11 +85,9 @@ async function retryWithExponentialBackoff<T>(
         await delay(delayTime);
         continue;
       }
-
       throw error;
     }
   }
-
   throw lastError;
 }
 
@@ -61,9 +118,10 @@ export interface AnalysisResult {
 }
 
 const promptTemplate = (text: string) => `
-قم بتحليل النص التاريخي العربي التالي واستخراج الكيانات وعلاقاتها بشكل مفصل.
-يجب أن يكون الإخراج كائن JSON صالحًا فقط بدون أي تنسيق إضافي أو علامات أو شرح.
-يجب أن يكون الرد بالتنسيق التالي تمامًا بدون أي نص آخر:
+Veuillez analyser le texte historique arabe suivant en extrayant de manière complète et détaillée toutes les entités et leurs relations.
+Ne tronquez pas la réponse : fournissez une réponse complète sans texte superflu ni explications additionnelles.
+La réponse doit être un objet JSON strictement valide et respecter exactement le format suivant, sans aucun ajout :
+
 \`\`\`json
 {
   "entities": {
@@ -117,92 +175,167 @@ const promptTemplate = (text: string) => `
 }
 \`\`\`
 
-النص المراد تحليله: ${text}
+Texte à analyser: ${text}
 
-يرجى ملاحظة ما يلي:
-* يجب أن تكون الأسماء باللغة العربية.
-* يجب أن تكون التواريخ بالتنسيق dd/mm/yyyy إذا أمكن، مع توفير التقويمين الهجري والميلادي.
-* حاول أن تكون الأوصاف موجزة وبلغة عربية سليمة.
-* اذكر المصادر والأدلة للعلاقات حيثما أمكن.
-* قم بتقييم قوة العلاقات على مقياس من 0 إلى 1.
-* استخرج المصطلحات التاريخية والعلمية المهمة وشرحها.
-* حدد الأدوار والانتماءات للشخصيات.
-* اذكر أهمية الأماكن والأحداث في السياق التاريخي.
+Remarques :
+* Les noms doivent être en arabe.
+* Les dates doivent être au format dd/mm/yyyy si possible, avec les deux calendriers (hijri et grégorien) fournis.
+* Les descriptions doivent être concises et en arabe correct.
+* Mentionnez les sources et preuves des relations si disponibles.
+* Évaluez la force des relations sur une échelle de 0 à 1.
+* Extrayez et expliquez les termes historiques et scientifiques importants.
+* Déterminez clairement les rôles et affiliations des personnages.
+* Précisez l'importance des lieux et événements dans leur contexte historique.
 `;
 
 const cleanJsonResponse = (text: string): string => {
   try {
-    // Remove any markdown code block indicators and extra whitespace
-    let cleaned = text
-      .replace(/```json\n?/g, "")
-      .replace(/```\n?/g, "")
-      .replace(/\n\s*\n/g, "\n")
+    let cleaned = text;
+    // Logger la réponse brute pour débogage
+    console.log("Réponse brute pour nettoyage :", text);
+
+    // Supprimer les blocs de code markdown
+    cleaned = cleaned
+      .replace(/```json\s*/g, "")
+      .replace(/```\s*/g, "")
       .trim();
 
-    // Remove any non-JSON text before or after the JSON object
-    const jsonStart = cleaned.indexOf("{");
-    const jsonEnd = cleaned.lastIndexOf("}");
-
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
+    // Extraire l'objet JSON extérieur
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1) {
+      cleaned = cleaned.slice(start, end + 1);
     }
 
-    // Fix common JSON formatting issues
+    // Amélioration du nettoyage :
+    // - Supprimer les caractères non imprimables (en incluant la plage pour l'arabe)
+    cleaned = cleaned.replace(/[^\x20-\x7E\u0600-\u06FF]+/g, " ");
+    // - Corriger les virgules superflues
+    cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
+    // - Corriger les problèmes d'espaces et de guillemets manquants
     cleaned = cleaned
-      .replace(/,\s*}/g, "}")
-      .replace(/,\s*]/g, "]")
-      .replace(/\\/g, "\\\\")
-      .replace(/"\s+"/g, '" "')
-      .replace(/(?<=["'}])\s+(?=[:,])/g, "")
-      .replace(/undefined/g, '""')
-      .replace(/\t/g, " ");
+      .replace(/}(\s*{)/g, "},$1")
+      .replace(/](\s*\[)/g, "],$1")
+      .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":')
+      .replace(/:\s*([^[{,\s][^,}\]]*?)([,}\]])/g, ':"$1"$2')
+      .replace(/\s+/g, " ")
+      .replace(/:\s*(undefined|null|''|"")\s*([,}])/g, ':""$2')
+      .replace(/([{,]\s*)([a-zA-Z0-9_]+)(\s*:)/g, '$1"$2"$3');
 
-    return cleaned;
+    // Tentative de parsing pour validation initiale
+    try {
+      JSON.parse(cleaned);
+      return cleaned;
+    } catch (e) {
+      console.warn(
+        "Nettoyage initial échoué, tentative de nettoyage approfondi...",
+      );
+      cleaned = cleaned
+        .replace(/[^\x20-\x7E\u0600-\u06FF]+/g, "")
+        .replace(/([{,]\s*)([^"\s]+)(\s*:)/g, '$1"$2"$3')
+        .replace(/:(\s*)([^",{\[\s][^,}\]]*?)([,}\]])/g, ':"$2"$3');
+      return cleaned;
+    }
   } catch (error) {
-    console.error("Error cleaning JSON:", error);
+    console.error("Erreur lors du nettoyage JSON :", error);
     return text;
   }
 };
 
 const parseAnalysisResult = (responseText: string): AnalysisResult => {
   try {
+    console.log("Réponse brute :", responseText);
+
     const cleanedJson = cleanJsonResponse(responseText);
+    console.log("JSON nettoyé :", cleanedJson);
+
+    // Valider la structure JSON de base avec regex.
+    if (!/^{[^]*"entities":\s*{[^]*}[^]*}$/.test(cleanedJson)) {
+      throw new Error("Structure JSON invalide");
+    }
+
     const parsed = JSON.parse(cleanedJson);
 
-    const createSafeArray = <T>(arr: any): T[] =>
-      Array.isArray(arr) ? arr : [];
+    // Validation complète avec le JSON Schema
+    if (!validateAnalysis(parsed)) {
+      console.error(
+        "La validation du JSON Schema a échoué :",
+        validateAnalysis.errors,
+      );
+      throw new Error("La validation du JSON Schema a échoué");
+    }
 
     const result: AnalysisResult = {
       entities: {
-        characters: createSafeArray(parsed?.entities?.characters || []),
-        places: createSafeArray(parsed?.entities?.places || []),
-        events: createSafeArray(parsed?.entities?.events || []),
-        dates: createSafeArray(parsed?.entities?.dates || []),
+        characters: [],
+        places: [],
+        events: [],
+        dates: [],
       },
-      relationships: createSafeArray(parsed?.relationships || []),
+      relationships: [],
     };
 
-    // Validate required fields
-    result.entities.characters = result.entities.characters.filter(
-      (char) => char?.name,
-    );
-    result.entities.places = result.entities.places.filter(
-      (place) => place?.name,
-    );
-    result.entities.events = result.entities.events.filter(
-      (event) => event?.name,
-    );
-    result.entities.dates = result.entities.dates.filter((date) => date?.date);
-    result.relationships = result.relationships.filter(
-      (rel) => rel?.source && rel?.target && rel?.type,
-    );
+    if (parsed?.entities) {
+      Object.entries(result.entities).forEach(([key]) => {
+        if (Array.isArray(parsed.entities[key])) {
+          result.entities[key] = parsed.entities[key]
+            .filter(
+              (entity) => entity && typeof entity === "object" && entity.name,
+            )
+            .map((entity) => ({
+              name: String(entity.name || ""),
+              title: String(entity.title || ""),
+              type: String(entity.type || ""),
+              description: String(entity.description || ""),
+              date: String(entity.date || ""),
+              calendar: String(entity.calendar || ""),
+            }));
+        }
+      });
+    }
+
+    if (Array.isArray(parsed?.relationships)) {
+      result.relationships = parsed.relationships
+        .filter(
+          (rel) =>
+            rel &&
+            typeof rel === "object" &&
+            rel.source &&
+            rel.target &&
+            rel.type,
+        )
+        .map((rel) => ({
+          source: String(rel.source || ""),
+          target: String(rel.target || ""),
+          type: String(rel.type || ""),
+          description: String(rel.description || ""),
+        }));
+    }
+
+    // Implémentation du fallback pour une réponse incomplète
+    if (
+      result.entities.characters.length === 0 &&
+      result.entities.places.length === 0 &&
+      result.entities.events.length === 0 &&
+      result.entities.dates.length === 0 &&
+      result.relationships.length === 0
+    ) {
+      console.warn("Réponse incomplète détectée, utilisation du fallback...");
+      return {
+        entities: {
+          characters: [{ name: "Aucune donnée disponible" }],
+          places: [{ name: "Aucune donnée disponible" }],
+          events: [{ name: "Aucune donnée disponible" }],
+          dates: [{ name: "Aucune donnée disponible" }],
+        },
+        relationships: [],
+      };
+    }
 
     return result;
   } catch (e) {
-    console.error("Failed to parse Gemini response:", e);
-    console.log("Raw response:", responseText);
-    console.log("Cleaned response attempted:", cleanJsonResponse(responseText));
-
+    console.error("Échec de l'analyse de la réponse :", e);
+    console.log("Réponse échouée :", responseText);
     return {
       entities: {
         characters: [],
@@ -218,22 +351,29 @@ const parseAnalysisResult = (responseText: string): AnalysisResult => {
 export async function analyzeText(text: string): Promise<AnalysisResult> {
   try {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      throw new Error("Gemini API key is not configured");
+      throw new Error("La clé API Gemini n'est pas configurée");
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // Limiter le nombre de tokens dans la réponse avec maxOutputTokens
+    const model = genAI.getGenerativeModel({
+      model: "gemini-pro",
+      maxOutputTokens: 1024,
+    });
     const prompt = promptTemplate(text);
 
     const generateContent = async () => {
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      return response.text();
+      // Logger la réponse brute pour faciliter le débogage
+      const responseText = await response.text();
+      console.log("Réponse brute de Gemini :", responseText);
+      return responseText;
     };
 
     const responseText = await retryWithExponentialBackoff(generateContent);
     return parseAnalysisResult(responseText);
   } catch (error) {
-    console.error("Error analyzing text:", error);
-    throw new Error("Failed to analyze text. Please try again.");
+    console.error("Erreur lors de l'analyse du texte :", error);
+    throw new Error("Échec de l'analyse du texte. Veuillez réessayer.");
   }
 }
