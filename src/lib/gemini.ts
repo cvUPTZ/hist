@@ -81,7 +81,7 @@ async function retryWithExponentialBackoff<T>(
         error?.message?.includes("overloaded")
       ) {
         const delayTime = baseDelay * Math.pow(2, i);
-        console.log(`Retry ${i + 1}/${maxRetries} after ${delayTime}ms`);
+        console.log(`Retry ${i + 1}/${maxRetries} après ${delayTime}ms`);
         await delay(delayTime);
         continue;
       }
@@ -175,7 +175,7 @@ La réponse doit être un objet JSON strictement valide et respecter exactement 
 }
 \`\`\`
 
-Texte à analyser: ${text}
+Texte à analyser : ${text}
 
 Remarques :
 * Les noms doivent être en arabe.
@@ -190,52 +190,29 @@ Remarques :
 
 const cleanJsonResponse = (text: string): string => {
   try {
-    let cleaned = text;
     // Logger la réponse brute pour débogage
     console.log("Réponse brute pour nettoyage :", text);
-
     // Supprimer les blocs de code markdown
-    cleaned = cleaned
+    let cleaned = text
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
-
     // Extraire l'objet JSON extérieur
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
     if (start !== -1 && end !== -1) {
       cleaned = cleaned.slice(start, end + 1);
     }
-
-    // Amélioration du nettoyage :
-    // - Supprimer les caractères non imprimables (en incluant la plage pour l'arabe)
-    cleaned = cleaned.replace(/[^\x20-\x7E\u0600-\u06FF]+/g, " ");
-    // - Corriger les virgules superflues
-    cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
-    // - Corriger les problèmes d'espaces et de guillemets manquants
-    cleaned = cleaned
-      .replace(/}(\s*{)/g, "},$1")
-      .replace(/](\s*\[)/g, "],$1")
-      .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":')
-      .replace(/:\s*([^[{,\s][^,}\]]*?)([,}\]])/g, ':"$1"$2')
-      .replace(/\s+/g, " ")
-      .replace(/:\s*(undefined|null|''|"")\s*([,}])/g, ':""$2')
-      .replace(/([{,]\s*)([a-zA-Z0-9_]+)(\s*:)/g, '$1"$2"$3');
-
-    // Tentative de parsing pour validation initiale
+    // Tenter de parser directement pour vérifier si le JSON est valide
     try {
       JSON.parse(cleaned);
-      return cleaned;
-    } catch (e) {
-      console.warn(
-        "Nettoyage initial échoué, tentative de nettoyage approfondi...",
-      );
-      cleaned = cleaned
-        .replace(/[^\x20-\x7E\u0600-\u06FF]+/g, "")
-        .replace(/([{,]\s*)([^"\s]+)(\s*:)/g, '$1"$2"$3')
-        .replace(/:(\s*)([^",{\[\s][^,}\]]*?)([,}\]])/g, ':"$2"$3');
-      return cleaned;
+    } catch (err) {
+      console.warn("JSON initial non valide :", err);
     }
+    // Remplacer les séparateurs de tableaux mal formatés :
+    // Remplacer une séquence de double quotes suivie d'un espace optionnel, d'une virgule arabe, d'un espace optionnel, et d'une double quote
+    cleaned = cleaned.replace(/"\s*،\s*"/g, '","');
+    return cleaned;
   } catch (error) {
     console.error("Erreur lors du nettoyage JSON :", error);
     return text;
@@ -245,7 +222,6 @@ const cleanJsonResponse = (text: string): string => {
 const parseAnalysisResult = (responseText: string): AnalysisResult => {
   try {
     console.log("Réponse brute :", responseText);
-
     const cleanedJson = cleanJsonResponse(responseText);
     console.log("JSON nettoyé :", cleanedJson);
 
@@ -253,7 +229,6 @@ const parseAnalysisResult = (responseText: string): AnalysisResult => {
     if (!/^{[^]*"entities":\s*{[^]*}[^]*}$/.test(cleanedJson)) {
       throw new Error("Structure JSON invalide");
     }
-
     const parsed = JSON.parse(cleanedJson);
 
     // Validation complète avec le JSON Schema
@@ -280,9 +255,10 @@ const parseAnalysisResult = (responseText: string): AnalysisResult => {
         if (Array.isArray(parsed.entities[key])) {
           result.entities[key] = parsed.entities[key]
             .filter(
-              (entity) => entity && typeof entity === "object" && entity.name,
+              (entity: any) =>
+                entity && typeof entity === "object" && entity.name,
             )
-            .map((entity) => ({
+            .map((entity: any) => ({
               name: String(entity.name || ""),
               title: String(entity.title || ""),
               type: String(entity.type || ""),
@@ -297,14 +273,14 @@ const parseAnalysisResult = (responseText: string): AnalysisResult => {
     if (Array.isArray(parsed?.relationships)) {
       result.relationships = parsed.relationships
         .filter(
-          (rel) =>
+          (rel: any) =>
             rel &&
             typeof rel === "object" &&
             rel.source &&
             rel.target &&
             rel.type,
         )
-        .map((rel) => ({
+        .map((rel: any) => ({
           source: String(rel.source || ""),
           target: String(rel.target || ""),
           type: String(rel.type || ""),
@@ -312,7 +288,7 @@ const parseAnalysisResult = (responseText: string): AnalysisResult => {
         }));
     }
 
-    // Implémentation du fallback pour une réponse incomplète
+    // Système de fallback pour les réponses incomplètes
     if (
       result.entities.characters.length === 0 &&
       result.entities.places.length === 0 &&
@@ -353,14 +329,12 @@ export async function analyzeText(text: string): Promise<AnalysisResult> {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
       throw new Error("La clé API Gemini n'est pas configurée");
     }
-
-    // Limiter le nombre de tokens dans la réponse avec maxOutputTokens
+    // Limiter le nombre de tokens dans la réponse via maxOutputTokens
     const model = genAI.getGenerativeModel({
       model: "gemini-pro",
       maxOutputTokens: 1024,
     });
     const prompt = promptTemplate(text);
-
     const generateContent = async () => {
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -369,7 +343,6 @@ export async function analyzeText(text: string): Promise<AnalysisResult> {
       console.log("Réponse brute de Gemini :", responseText);
       return responseText;
     };
-
     const responseText = await retryWithExponentialBackoff(generateContent);
     return parseAnalysisResult(responseText);
   } catch (error) {
