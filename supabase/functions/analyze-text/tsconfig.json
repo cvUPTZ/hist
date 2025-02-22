@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "lib": ["dom"],
+    "allowJs": true,
+    "strict": false,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "types": ["@types/react", "@types/react-dom"]
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "../shared-one/cors": "./cors.ts",
+    "https://deno.land/std@0.177.1/http/server.ts": "https://deno.land/std@0.177.1/http/server.ts"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns", "dom"],
+    "allowJs": true,
+    "strict": true,
+    "types": []
+  }
+}
